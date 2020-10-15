@@ -1,0 +1,6 @@
+{
+	"CosmosConnection": "COSMOS_CONN_STRING",
+	"RedisAzureRedisCache": "CACHE_CONN_STRING",
+	"CollectionId": "Configuration_Dev",
+	"DatabaseId": "RestaurantLocations"
+}

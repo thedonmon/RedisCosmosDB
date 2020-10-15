@@ -1,0 +1,11 @@
+{
+  "IsEncrypted": false,
+  "Values": {
+    "AzureWebJobsStorage": "STORAGE_CONN_STRING",
+    "CosmosConnection": "COSMOS_CONN_STRING",
+    "FUNCTIONS_WORKER_RUNTIME": "dotnet",
+    "RedisAzureRedisCache": "CACHE_CONN_STRING",
+    "CollectionId": "Configuration_Dev",
+    "DatabaseId": "RestaurantLocations"
+  }
+}
