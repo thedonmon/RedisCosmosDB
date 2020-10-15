@@ -10,9 +10,9 @@ namespace RestaurantLocation.Functions.Models
         [Required]
         public string CountryCode { get; set; }
         [Required]
-        public int FulfillmentCenterId { get; set; }
+        public int RestaurantId { get; set; }
         public Guid id { get; set; }
-        public List<string> AllowedCountries { get; set; } = new List<string>();
+        public List<string> AllowedZones { get; set; } = new List<string>();
         public bool IsActive { get; set; }
     }
 }

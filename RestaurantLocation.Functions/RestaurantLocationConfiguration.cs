@@ -1,24 +1,22 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Azure.Documents;
+using Microsoft.Azure.Documents.Client;
 using Microsoft.Azure.WebJobs;
 using Microsoft.Azure.WebJobs.Extensions.Http;
-using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.Caching.Distributed;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Newtonsoft.Json;
-using RestaurantLocation.Functions.Models;
-using Microsoft.Azure.Documents.Client;
-using System.Linq;
-using System.Collections.Generic;
-using Microsoft.Azure.Documents;
-using StackExchange.Redis;
-using Microsoft.Extensions.Caching.Distributed;
 using RestaurantLocation.Functions.Helpers;
-using Microsoft.Extensions.Configuration;
-using System.Text;
+using RestaurantLocation.Functions.Models;
 
-namespace RestaurantConfiguration.Functions
+namespace RestaurantLocation.Functions
 {
     public class RestaurantLocationConfiguration
     {
@@ -49,13 +47,13 @@ namespace RestaurantConfiguration.Functions
             {
                 Uri collectionUri = UriFactory.CreateDocumentCollectionUri(databaseId: _config["DatabaseId"], collectionId: _config["CollectionId"]);
 
-                var documentToUpdate = client.CreateDocumentQuery<RestaurantLocationConfigurationDTO>(collectionUri, null).Where(x => x.FulfillmentCenterId == data.FulfillmentCenterId).ToList();
+                var documentToUpdate = client.CreateDocumentQuery<RestaurantLocationConfigurationDTO>(collectionUri, null).Where(x => x.RestaurantId == data.RestaurantId).ToList();
                 if (documentToUpdate.Any())
                 {
                     foreach (var item in documentToUpdate)
                     {
-                        item.AllowedCountries = data.AllowedCountries;
-                        item.FulfillmentCenterId = data.FulfillmentCenterId;
+                        item.AllowedZones = data.AllowedZones;
+                        item.RestaurantId = data.RestaurantId;
                         item.UpdateDate = DateTimeOffset.UtcNow;
                         item.IsActive = data.IsActive;
                         await client.UpsertDocumentAsync(collectionUri, item);
@@ -65,9 +63,9 @@ namespace RestaurantConfiguration.Functions
                 {
                     var itemToAdd = new RestaurantLocationConfigurationDTO()
                     {
-                        AllowedCountries = data.AllowedCountries,
+                        AllowedZones = data.AllowedZones,
                         CountryCode = data.CountryCode,
-                        FulfillmentCenterId = data.FulfillmentCenterId,
+                        RestaurantId = data.RestaurantId,
                         InsertDate = DateTimeOffset.UtcNow,
                         IsActive = data.IsActive
                         
@@ -77,11 +75,11 @@ namespace RestaurantConfiguration.Functions
             }
             catch(Exception ex)
             {
-                log.LogError(ex, $"Failed to upsert {data.FulfillmentCenterId}");
-                return new BadRequestObjectResult($"Failed to upsert {data.FulfillmentCenterId}");
+                log.LogError(ex, $"Failed to upsert {data.RestaurantId}");
+                return new BadRequestObjectResult($"Failed to upsert {data.RestaurantId}");
             }
 
-            return new OkObjectResult($"Restaurant {data.FulfillmentCenterId} upserted");
+            return new OkObjectResult($"Restaurant {data.RestaurantId} upserted");
         }
 
         [FunctionName("UpdateRestaurantLocationConfigurationCache")]
@@ -89,9 +87,9 @@ namespace RestaurantConfiguration.Functions
             [CosmosDBTrigger(
                                 databaseName: "%DatabaseId%",
                                 collectionName: "%CollectionId%",
-                                LeaseCollectionPrefix = "FulfillmentCenterUpdated",
+                                LeaseCollectionPrefix = "RestaurantLocationUpdated",
                                 ConnectionStringSetting = "CosmosConnection", CreateLeaseCollectionIfNotExists = true, StartFromBeginning =true)] 
-            IReadOnlyList<Document> fulfillmentCenters,
+            IReadOnlyList<Document> restaurants,
             [CosmosDB(ConnectionStringSetting = "CosmosConnection")] DocumentClient client,
             ILogger log)
         {
@@ -118,21 +116,21 @@ namespace RestaurantConfiguration.Functions
             }
             else
             {
-                var replaceExistingFCJson = fulfillmentCenters.Where(x => cacheItems.Select(y => y.id).Contains(Guid.Parse(x.Id))).Select(d => d.ToString());
-                if (replaceExistingFCJson.Any())
+                var replaceExistingJson = restaurants.Where(x => cacheItems.Select(y => y.id).Contains(Guid.Parse(x.Id))).Select(d => d.ToString());
+                if (replaceExistingJson.Any())
                 {
-                    var FCsToUpdate = replaceExistingFCJson.Select(x => JsonConvert.DeserializeObject<RestaurantLocationConfigurationDTO>(x)).ToList();
-                    log.LogInformation("Updating {count} items in Redis", FCsToUpdate.Count());
-                    cacheItems.RemoveAll(x => FCsToUpdate.Select(y => y.id).Contains(x.id));
-                    cacheItems.AddRange(FCsToUpdate);
+                    var restaurantsToUpdate = replaceExistingJson.Select(x => JsonConvert.DeserializeObject<RestaurantLocationConfigurationDTO>(x)).ToList();
+                    log.LogInformation("Updating {count} items in Redis", restaurantsToUpdate.Count());
+                    cacheItems.RemoveAll(x => restaurantsToUpdate.Select(y => y.id).Contains(x.id));
+                    cacheItems.AddRange(restaurantsToUpdate);
                 }
                 else
                 {
-                    var newFCToAdd = fulfillmentCenters.Where(x => !cacheItems.Select(y => y.id).Contains(Guid.Parse(x.Id))).Select(d => d.ToString());
-                    if (newFCToAdd.Any())
+                    var newRestaurantToAdd = restaurants.Where(x => !cacheItems.Select(y => y.id).Contains(Guid.Parse(x.Id))).Select(d => d.ToString());
+                    if (newRestaurantToAdd.Any())
                     {
-                        var FCsToAdd = newFCToAdd.Select(x => JsonConvert.DeserializeObject<RestaurantLocationConfigurationDTO>(x)).ToList();
-                        log.LogInformation("Adding {count} items in Redis", newFCToAdd.Count());
+                        var FCsToAdd = newRestaurantToAdd.Select(x => JsonConvert.DeserializeObject<RestaurantLocationConfigurationDTO>(x)).ToList();
+                        log.LogInformation("Adding {count} items in Redis", newRestaurantToAdd.Count());
                         cacheItems.AddRange(FCsToAdd);
                     }
                 }
@@ -141,7 +139,7 @@ namespace RestaurantConfiguration.Functions
         }
 
         [FunctionName("LoadRestaurantLocationConfigurationCache")]
-        public async Task<List<RestaurantLocationConfigurationDTO>> LoadFulfillmentCountryFromCache(
+        public async Task<List<RestaurantLocationConfigurationDTO>> LoadRestaurantLocationFromCache(
             [HttpTrigger(AuthorizationLevel.Function, "get", Route = "LoadRestaurantLocationCache")] HttpRequest req,
             [CosmosDB(ConnectionStringSetting = "CosmosConnection")] DocumentClient client,
             ILogger log)
