@@ -41,7 +41,7 @@ namespace RestaurantLocation.Functions
                 requestBody = await stream.ReadToEndAsync();
             }
             RestaurantLocationRequest data = JsonConvert.DeserializeObject<RestaurantLocationRequest>(requestBody);
-            log.LogInformation("Executing upsert with request data: {FCData}", requestBody);
+            log.LogInformation("Executing upsert with request data: {RData}", requestBody);
 
             try
             {
@@ -129,9 +129,9 @@ namespace RestaurantLocation.Functions
                     var newRestaurantToAdd = restaurants.Where(x => !cacheItems.Select(y => y.id).Contains(Guid.Parse(x.Id))).Select(d => d.ToString());
                     if (newRestaurantToAdd.Any())
                     {
-                        var FCsToAdd = newRestaurantToAdd.Select(x => JsonConvert.DeserializeObject<RestaurantLocationConfigurationDTO>(x)).ToList();
+                        var restaurantsToAdd = newRestaurantToAdd.Select(x => JsonConvert.DeserializeObject<RestaurantLocationConfigurationDTO>(x)).ToList();
                         log.LogInformation("Adding {count} items in Redis", newRestaurantToAdd.Count());
-                        cacheItems.AddRange(FCsToAdd);
+                        cacheItems.AddRange(restaurantsToAdd);
                     }
                 }
                 await _cache.SetAsync(RedisKey, cacheItems, TimeSpan.FromDays(365)).ConfigureAwait(false);
